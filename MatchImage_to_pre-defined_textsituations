@@ -1,0 +1,70 @@
+# CLIP is designed for matching images to text descriptions and not for generating text descriptions, 
+
+import cv2
+from PIL import Image
+import torch
+from transformers import CLIPProcessor, CLIPModel
+
+# Load CLIP model and processor
+model_name = "openai/clip-vit-base-patch32"
+model = CLIPModel.from_pretrained(model_name)
+processor = CLIPProcessor.from_pretrained(model_name)
+
+# Initialize the camera
+cap = cv2.VideoCapture(0)
+
+# Predefined descriptions to compare
+text_descriptions = [
+    "a man working at a desk",
+    "a cat sitting on a chair",
+    "a beautiful landscape",
+    "a busy street",
+    "a person eating food"
+]
+
+# Tokenize text descriptions
+text_inputs = processor(text=text_descriptions, return_tensors="pt", padding=True)
+
+def get_frame_description(frame):
+    # Convert the frame (numpy array) to a PIL image
+    pil_image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+
+    # Preprocess the image
+    inputs = processor(images=pil_image, return_tensors="pt")
+
+    # Perform inference
+    with torch.no_grad():
+        image_features = model.get_image_features(**inputs)
+        text_features = model.get_text_features(**text_inputs)
+
+    # Calculate similarity
+    image_features /= image_features.norm(dim=-1, keepdim=True)
+    text_features /= text_features.norm(dim=-1, keepdim=True)
+    similarity = (image_features @ text_features.T).squeeze()
+
+    # Get the most similar description
+    most_similar_index = similarity.argmax().item()
+    return text_descriptions[most_similar_index]
+
+while True:
+    # Capture frame-by-frame
+    ret, frame = cap.read()
+
+    if not ret:
+        break
+
+    # Get the scene description
+    description = get_frame_description(frame)
+    
+    # Display the frame and description
+    cv2.imshow('Frame', frame)
+    print("Scene description:", description)
+
+    # Press 'q' to quit
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+# When everything done, release the capture
+cap.release()
+cv2.destroyAllWindows()
+
